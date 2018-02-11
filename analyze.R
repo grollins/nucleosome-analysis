@@ -61,10 +61,6 @@ df3 %>%
         geom_hline(aes(yintercept = mu), size = 0.25) +
         facet_wrap(~idx)
 
-df4 <- df3 %>%
-    filter(idx < 10) %>%
-    filter(sample_name == 'can')
-
 find_peaks <- function(df) {
     pp_matrix <- df %>%
         select(idx, value, sample_num) %>%
@@ -85,15 +81,67 @@ find_peaks <- function(df) {
     return(df_with_peaks)
 }
 
-df5 <- df3 %>%
+df4 <- df3 %>%
     filter(idx < 10) %>%
     split(.$sample_name) %>%
-    map(find_peaks)
+    map(find_peaks) %>%
+    bind_rows()
 
 
-df5[['aly']] %>%
-    ggplot(aes(sample_num, value)) +
+df4 %>%
+    ggplot(aes(sample_num, value, color = sample_name)) +
         geom_line() +
         facet_wrap(~idx, scales = 'free_y') +
-        geom_point(data = filter(df5[['aly']], is_peak == T), aes(sample_num, value),
-                   color = 'red')
+        geom_point(data = filter(df4, is_peak == T), aes(sample_num, value,
+                   color = sample_name)) +
+        ggthemes::theme_few()
+
+df4 %>%
+    filter(idx == 1) %>%
+    filter(sample_name == 'bam') %>%
+    filter(is_peak == T) %$% value %>%
+    max()
+
+df_max_peak_values <- df4 %>%
+    filter(is_peak == T) %>%
+    group_by(idx, sample_name) %>%
+    summarize(m = max(value))
+
+df5 <- df4 %>%
+    left_join(df_max_peak_values, by = c('idx', 'sample_name')) %>%
+    mutate(is_peak2 = ifelse(abs(m - value) < 1e-5, T, F))
+
+df5 %>%
+    ggplot(aes(sample_num, value, color = sample_name)) +
+        geom_line() +
+        facet_wrap(~idx, scales = 'free_y') +
+        geom_point(data = filter(df5, is_peak == T), aes(sample_num, value,
+                                                     color = sample_name)) +
+        geom_point(data = filter(df5, is_peak2 == T), aes(sample_num, value),
+                                                      color = 'black') +
+        ggthemes::theme_few()
+
+df6 <- df5 %>%
+    split(.$idx) %>%
+    map(function(x) {
+        bam <- x %>%
+            filter(sample_name == 'bam') %>%
+            filter(is_peak2 == T)
+        
+        bam_idx = ifelse(nrow(bam) == 0, 0, bam$sample_num)
+        
+        y <- x %>%
+            mutate(delta = sample_num - bam_idx)
+        return(y)
+    }) %>%
+    bind_rows()
+
+df6 %>%
+    filter(is_peak2 == T) %>%
+    filter(sample_name != 'bam') %>%
+    mutate(idx_fct = as.factor(idx)) %>%
+    select(idx_fct, sample_name, value, delta) %>%
+    ggplot(aes(value, delta, color = sample_name)) +
+        geom_point() +
+        facet_wrap(~idx_fct) +
+        ggthemes::theme_few()
